@@ -57,7 +57,7 @@ import {
   CircleDollarSign,
   BarChart3,
 } from "lucide-react";
-import type { ChatMessage } from "../hooks/useBankSystem";
+import type { ChatMessage, GameState } from "../hooks/useBankSystem";
 import type { Customer, Transaction, Loan } from "../lib/mock-db";
 import { calculateRiskScore } from "../lib/mock-db";
 
@@ -1081,11 +1081,17 @@ function ChatPanel({
   isTyping,
   onSend,
   onClose,
+  gameState,
+  onStartGame,
+  onStopGame,
 }: {
   messages: ChatMessage[];
   isTyping: boolean;
   onSend: (text: string) => void;
   onClose: () => void;
+  gameState?: GameState;
+  onStartGame?: () => void;
+  onStopGame?: () => void;
 }) {
   const [input, setInput] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -1127,13 +1133,71 @@ function ChatPanel({
           </div>
           <div>
             <h3 className="text-xs font-bold text-white">BankBot AI</h3>
-            <p className="text-[9px] text-blue-200">Claude Sonnet · 20 tools available</p>
+            <p className="text-[9px] text-blue-200">
+              {gameState?.active
+                ? `Round ${gameState.currentRound}/${gameState.maxRounds} \u00b7 Turn ${gameState.currentTurn}/${gameState.maxTurns}`
+                : "Claude Sonnet \u00b7 20 tools available"}
+            </p>
           </div>
         </div>
-        <button onClick={onClose} className="text-white/70 hover:text-white transition-colors">
-          <X className="w-4 h-4" />
-        </button>
+        <div className="flex items-center gap-1.5">
+          {gameState?.active ? (
+            <button
+              onClick={onStopGame}
+              className="text-[10px] font-bold bg-red-500 hover:bg-red-600 text-white px-3 py-1.5 rounded-lg transition-colors shadow-sm"
+            >
+              Stop Exercise
+            </button>
+          ) : (
+            <button
+              onClick={onStartGame}
+              className="text-[10px] font-bold bg-emerald-500 hover:bg-emerald-600 text-white px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 shadow-sm"
+            >
+              <Shield className="w-3.5 h-3.5" />
+              Start Red Team
+            </button>
+          )}
+          <button onClick={onClose} className="text-white/70 hover:text-white transition-colors ml-1">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
       </div>
+
+      {/* Game Status Bar */}
+      {gameState?.active && (
+        <div className="bg-slate-900 px-3 py-1.5 flex items-center justify-between text-[9px] border-b border-slate-700 flex-shrink-0">
+          <div className="flex items-center gap-2">
+            <span className="w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse" />
+            <span className="text-red-400 font-semibold">LIVE RED TEAM</span>
+            <span className="text-slate-400">
+              {gameState.phase === "tester_thinking"
+                ? "Jamie attacking..."
+                : gameState.phase === "bankbot_thinking"
+                  ? "BankBot defending..."
+                  : gameState.phase === "judge_evaluating"
+                    ? "Judge evaluating..."
+                    : gameState.phase === "round_end"
+                      ? "Round complete"
+                      : gameState.phase === "game_over"
+                        ? "Exercise complete"
+                        : ""}
+            </span>
+          </div>
+          <div className="flex items-center gap-2 text-slate-500">
+            <span>R{gameState.currentRound}/{gameState.maxRounds}</span>
+            <span>\u00b7</span>
+            <span>T{gameState.currentTurn}/{gameState.maxTurns}</span>
+            {gameState.roundResults.filter(r => r.breached).length > 0 && (
+              <>
+                <span>\u00b7</span>
+                <span className="text-red-400">
+                  {gameState.roundResults.filter(r => r.breached).length} breach(es)
+                </span>
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Messages */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto p-3 space-y-2.5">
@@ -1159,26 +1223,46 @@ function ChatPanel({
         {messages.map((msg) => {
           const isBot = msg.sender === "BankBot";
           const isUser = msg.sender === "John Smith";
+          const isTester = msg.sender === "Tester (Jamie)";
+          const isJudge = msg.sender === "Judge";
+          const isSystem = msg.sender === "System";
           return (
             <div key={msg.id} className={cn("flex", isUser ? "justify-end" : "justify-start")}>
-              <div
-                className={cn(
-                  "max-w-[85%] rounded-2xl px-3 py-2 text-[11px] leading-relaxed",
-                  isUser
-                    ? "bg-[#002D72] text-white rounded-br-sm"
-                    : isBot
-                      ? "bg-slate-100 text-slate-800 rounded-bl-sm"
-                      : "bg-amber-50 text-amber-800 border border-amber-200 rounded-bl-sm",
-                )}
-              >
-                {!isUser && (
-                  <p className={cn("text-[9px] font-semibold mb-0.5", isBot ? "text-blue-600" : "text-amber-600")}>
-                    {msg.sender}
-                  </p>
-                )}
-                <p className="whitespace-pre-wrap break-words">{msg.text}</p>
-                <p className={cn("text-[8px] mt-1 text-right", isUser ? "text-blue-200" : "text-slate-400")}>{msg.timestamp}</p>
-              </div>
+              {isSystem ? (
+                <div className="w-full bg-slate-800/90 text-slate-200 rounded-lg px-3 py-2 text-[10px] leading-relaxed border border-slate-700">
+                  <p className="text-[9px] font-bold text-slate-400 mb-0.5">SYSTEM</p>
+                  <p className="whitespace-pre-wrap break-words">{msg.text}</p>
+                </div>
+              ) : (
+                <div
+                  className={cn(
+                    "max-w-[85%] rounded-2xl px-3 py-2 text-[11px] leading-relaxed",
+                    isUser
+                      ? "bg-[#002D72] text-white rounded-br-sm"
+                      : isBot
+                        ? "bg-slate-100 text-slate-800 rounded-bl-sm"
+                        : isTester
+                          ? "bg-emerald-50 text-emerald-900 border border-emerald-200 rounded-bl-sm"
+                          : isJudge
+                            ? "bg-amber-50 text-amber-900 border border-amber-300 rounded-bl-sm"
+                            : "bg-amber-50 text-amber-800 border border-amber-200 rounded-bl-sm",
+                  )}
+                >
+                  {!isUser && (
+                    <p className={cn(
+                      "text-[9px] font-semibold mb-0.5",
+                      isBot ? "text-blue-600"
+                        : isTester ? "text-emerald-600"
+                          : isJudge ? "text-amber-600"
+                            : "text-amber-600",
+                    )}>
+                      {isTester ? "\uD83D\uDC80 " : isJudge ? "\u2696\uFE0F " : ""}{msg.sender}
+                    </p>
+                  )}
+                  <p className="whitespace-pre-wrap break-words">{msg.text}</p>
+                  <p className={cn("text-[8px] mt-1 text-right", isUser ? "text-blue-200" : "text-slate-400")}>{msg.timestamp}</p>
+                </div>
+              )}
             </div>
           );
         })}
@@ -1190,7 +1274,17 @@ function ChatPanel({
               <span className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
               <span className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
             </div>
-            <span className="text-[10px]">BankBot is thinking...</span>
+            <span className="text-[10px]">
+              {gameState?.active
+                ? gameState.phase === "bankbot_thinking"
+                  ? "BankBot is thinking..."
+                  : gameState.phase === "tester_thinking"
+                    ? "Jamie is crafting an attack..."
+                    : gameState.phase === "judge_evaluating"
+                      ? "Judge is evaluating..."
+                      : "BankBot is thinking..."
+                : "BankBot is thinking..."}
+            </span>
           </div>
         )}
       </div>
@@ -1299,6 +1393,9 @@ interface BankPortalProps {
     markNotificationRead: (id: string) => void;
     txFilter: string;
     setTxFilter: (f: string) => void;
+    gameState: GameState;
+    startGame: (maxRounds?: number, maxTurns?: number) => void;
+    stopGame: () => void;
   };
 }
 
@@ -1416,6 +1513,9 @@ export function BankPortal({ bank }: BankPortalProps) {
             isTyping={bank.isTyping}
             onSend={bank.handleUserMessage}
             onClose={() => setShowChat(false)}
+            gameState={bank.gameState}
+            onStartGame={() => bank.startGame(4, 8)}
+            onStopGame={bank.stopGame}
           />
         )}
       </AnimatePresence>

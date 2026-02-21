@@ -31,23 +31,44 @@ function VideoTile({
   color,
   initials,
   isMuted = false,
+  isActive = false,
+  isSpeaking = false,
 }: {
   name: string;
   role: string;
   color: string;
   initials: string;
   isMuted?: boolean;
+  isActive?: boolean;
+  isSpeaking?: boolean;
 }) {
   return (
-    <div className="relative rounded-lg overflow-hidden bg-slate-900 border border-slate-700/50 w-full aspect-video">
+    <div className={cn(
+      "relative rounded-lg overflow-hidden bg-slate-900 w-full aspect-video transition-all duration-300",
+      isActive
+        ? "border-2 border-emerald-400 shadow-lg shadow-emerald-500/20"
+        : isSpeaking
+          ? "border-2 border-blue-400 shadow-lg shadow-blue-500/20"
+          : "border border-slate-700/50",
+    )}>
       <div className="absolute inset-0 flex items-center justify-center">
         <div
-          className="w-10 h-10 rounded-full flex items-center justify-center font-bold text-white text-sm"
+          className={cn(
+            "w-10 h-10 rounded-full flex items-center justify-center font-bold text-white text-sm transition-transform",
+            isSpeaking && "animate-pulse scale-110",
+          )}
           style={{ backgroundColor: color }}
         >
           {initials}
         </div>
       </div>
+      {isSpeaking && (
+        <div className="absolute top-1 right-1 flex items-center gap-0.5">
+          <span className="w-1 h-2 bg-emerald-400 rounded-full animate-pulse" />
+          <span className="w-1 h-3 bg-emerald-400 rounded-full animate-pulse" style={{ animationDelay: "100ms" }} />
+          <span className="w-1 h-2 bg-emerald-400 rounded-full animate-pulse" style={{ animationDelay: "200ms" }} />
+        </div>
+      )}
       <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/80 to-transparent px-2 py-1">
         <div className="flex items-center gap-1.5">
           {isMuted && <MicOff className="w-3 h-3 text-red-400" />}
@@ -129,6 +150,19 @@ export default function MeetUI() {
   const [videoOn, setVideoOn] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
+  const { gameState } = bank;
+
+  // Determine which participant is "speaking" based on game phase
+  const speakingAgent = gameState.active
+    ? gameState.phase === "tester_thinking"
+      ? "Jamie"
+      : gameState.phase === "bankbot_thinking"
+        ? "BankBot"
+        : gameState.phase === "judge_evaluating"
+          ? "Judge"
+          : null
+    : null;
+
   const participants = [
     { name: "Judge", role: "Evaluator", color: "#d97706", initials: "JG" },
     { name: "Jamie", role: "Red Team", color: "#059669", initials: "JM" },
@@ -148,8 +182,22 @@ export default function MeetUI() {
               Red Team Banking Agent — Live Session
             </h1>
             <p className="text-[10px] text-slate-400 mt-0.5 flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse" />
-              Recording · 3 participants · Teller: John Smith
+              {gameState.active ? (
+                <>
+                  <span className="w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse" />
+                  Red Team Live · Round {gameState.currentRound}/{gameState.maxRounds} · Turn {gameState.currentTurn}/{gameState.maxTurns}
+                </>
+              ) : gameState.phase === "game_over" ? (
+                <>
+                  <span className="w-1.5 h-1.5 bg-amber-500 rounded-full" />
+                  Exercise Complete · {gameState.roundResults.filter(r => r.breached).length}/{gameState.roundResults.length} breached
+                </>
+              ) : (
+                <>
+                  <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full" />
+                  Ready · 3 participants · Teller: John Smith
+                </>
+              )}
             </p>
           </div>
         </div>
@@ -240,6 +288,11 @@ export default function MeetUI() {
                     color={p.color}
                     initials={p.initials}
                     isMuted={p.name !== "John Smith"}
+                    isSpeaking={speakingAgent === p.name}
+                    isActive={
+                      speakingAgent === p.name ||
+                      (p.name === "John Smith" && speakingAgent === "BankBot")
+                    }
                   />
                 ))}
               </div>
