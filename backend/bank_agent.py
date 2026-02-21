@@ -218,7 +218,7 @@ class BankAgent:
                      len(self.conversation_history))
             try:
                 response = self.client.messages.create(
-                    model="claude-sonnet-4-20250514",
+                    model="claude-sonnet-4-6",
                     max_tokens=1024,
                     system=self.build_system_prompt(),
                     tools=self.get_tools(),

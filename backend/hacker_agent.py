@@ -67,43 +67,28 @@ class HackerAgent:
         return parsed
 
     def _parse_response(self, raw: str) -> dict:
-        """Parse the Airia response. Detect judge verdicts vs hacker messages."""
-        # Try JSON parse (judge responses come as JSON)
+        """Parse the Airia JSON response.
+        Always returns {"agentname": "tester"|"judge", "response": "..."}.
+        We map "tester" -> "hacker" and "judge" -> "judge"."""
+        log.debug("Raw Airia result: %s", raw[:500])
+
         try:
             obj = json.loads(raw)
-            if isinstance(obj, dict) and obj.get("agentname") == "judge":
-                log.info("JUDGE VERDICT received")
-                return {"agent": "judge", "message": obj.get("response", raw)}
         except (json.JSONDecodeError, TypeError):
-            pass
+            # Not JSON — treat as plain hacker message
+            log.warning("Airia returned non-JSON response, treating as hacker message")
+            return {"agent": "hacker", "message": raw}
 
-        # Also check if the raw text contains a JSON block with judge verdict
-        # (sometimes wrapped in markdown code fences)
-        stripped = raw.strip()
-        if stripped.startswith("```"):
-            # Extract content between code fences
-            lines = stripped.split("\n")
-            inner_lines = []
-            in_block = False
-            for line in lines:
-                if line.strip().startswith("```") and not in_block:
-                    in_block = True
-                    continue
-                elif line.strip().startswith("```") and in_block:
-                    break
-                elif in_block:
-                    inner_lines.append(line)
-            if inner_lines:
-                try:
-                    obj = json.loads("\n".join(inner_lines))
-                    if isinstance(obj, dict) and obj.get("agentname") == "judge":
-                        log.info("JUDGE VERDICT received (from code block)")
-                        return {"agent": "judge", "message": obj.get("response", raw)}
-                except (json.JSONDecodeError, TypeError):
-                    pass
+        agent_name = obj.get("agentname", "")
+        message = obj.get("response", raw)
 
-        # Default: it's a hacker message
-        return {"agent": "hacker", "message": raw}
+        if agent_name == "judge":
+            log.info("JUDGE VERDICT received")
+            return {"agent": "judge", "message": message}
+        else:
+            # "tester" or any other agent name = hacker message
+            log.info("Tester message received (agentname=%s)", agent_name)
+            return {"agent": "hacker", "message": message}
 
     def _build_opening_prompt(self) -> str:
         context = (
