@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SecureBank — Red Team Exercise</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Inter:wght@400;500;600;700&display=swap');
+        body { font-family: 'Inter', sans-serif; background: #0a0a0f; color: #e2e8f0; }
+        .mono { font-family: 'JetBrains Mono', monospace; }
+        .glass { background: rgba(15, 23, 42, 0.8); backdrop-filter: blur(12px); border: 1px solid rgba(148, 163, 184, 0.1); }
+        .hacker-msg { border-left: 3px solid #ef4444; background: rgba(239, 68, 68, 0.05); }
+        .bank-msg { border-left: 3px solid #3b82f6; background: rgba(59, 130, 246, 0.05); }
+        .tool-msg { border-left: 3px solid #f59e0b; background: rgba(245, 158, 11, 0.05); }
+        .leak-msg { border-left: 3px solid #ef4444; background: rgba(239, 68, 68, 0.15); animation: pulse-border 2s infinite; }
+        @keyframes pulse-border { 0%, 100% { border-color: #ef4444; } 50% { border-color: #fca5a5; } }
+        .chat-scroll { scroll-behavior: smooth; }
+        .chat-scroll::-webkit-scrollbar { width: 6px; }
+        .chat-scroll::-webkit-scrollbar-track { background: transparent; }
+        .chat-scroll::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+        .fade-in { animation: fadeIn 0.3s ease-in; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+        .spin { animation: spin 1s linear infinite; }
+        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        input[type="text"], input[type="password"], input[type="number"] {
+            background: rgba(15, 23, 42, 0.9); border: 1px solid rgba(148, 163, 184, 0.2);
+            color: #e2e8f0; padding: 6px 10px; border-radius: 6px; font-size: 13px;
+        }
+        input:focus { outline: none; border-color: #3b82f6; }
+    </style>
+</head>
+<body class="min-h-screen">
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useRef, useCallback } = React;
+
+// --- Voice ---
+function speak(text, speaker) {
+    if (!window.__voiceEnabled) return;
+    speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text.slice(0, 300));
+    u.rate = 1.3;
+    if (speaker === 'hacker') { u.pitch = 0.7; u.rate = 1.1; }
+    else { u.pitch = 1.1; u.rate = 1.2; }
+    speechSynthesis.speak(u);
+}
+window.__voiceEnabled = false;
+
+// --- Main App ---
+function App() {
+    const wsRef = useRef(null);
+    const [connected, setConnected] = useState(false);
+    const [gameState, setGameState] = useState('idle'); // idle | running | finished
+    const [config, setConfig] = useState(null);
+    const [messages, setMessages] = useState([]);
+    const [roundResults, setRoundResults] = useState([]);
+    const [currentRound, setCurrentRound] = useState(0);
+    const [currentTurn, setCurrentTurn] = useState(0);
+    const [maxRounds, setMaxRounds] = useState(4);
+    const [maxTurns, setMaxTurns] = useState(8);
+    const [voiceOn, setVoiceOn] = useState(false);
+    const [error, setError] = useState(null);
+    const [gameOverData, setGameOverData] = useState(null);
+    const chatRef = useRef(null);
+    const handleEventRef = useRef(null);
+
+    // Connect WebSocket
+    useEffect(() => {
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const socket = new WebSocket(`${protocol}//${window.location.host}/ws`);
+        socket.onopen = () => setConnected(true);
+        socket.onclose = () => { setConnected(false); setGameState('idle'); };
+        socket.onmessage = (evt) => {
+            const data = JSON.parse(evt.data);
+            if (handleEventRef.current) handleEventRef.current(data);
+        };
+        wsRef.current = socket;
+        return () => socket.close();
+    }, []);
+
+    // Auto-scroll chat
+    useEffect(() => {
+        if (chatRef.current) chatRef.current.scrollTop = chatRef.current.scrollHeight;
+    }, [messages]);
+
+    const handleEvent = useCallback((data) => {
+        switch (data.event) {
+            case 'game_started':
+                setConfig(data.config);
+                setGameState('running');
+                setMessages([]);
+                setRoundResults([]);
+                setError(null);
+                setGameOverData(null);
+                break;
+            case 'round_start':
+                setCurrentRound(data.round);
+                setCurrentTurn(0);
+                setMessages([{
+                    type: 'system', text: `--- Round ${data.round} of ${data.max_rounds} ---`,
+                }]);
+                break;
+            case 'hacker_message':
+                setCurrentTurn(data.turn);
+                setMessages(prev => [...prev, {
+                    type: 'hacker', text: data.message, round: data.round, turn: data.turn,
+                }]);
+                speak(data.message, 'hacker');
+                break;
+            case 'tool_call':
+                setMessages(prev => [...prev, {
+                    type: 'tool', tool: data.tool, input: data.input, output: data.output,
+                    round: data.round, turn: data.turn,
+                }]);
+                break;
+            case 'bank_message':
+                setMessages(prev => [...prev, {
+                    type: 'bank', text: data.message, tools: data.tools_used,
+                    round: data.round, turn: data.turn,
+                }]);
+                speak(data.message, 'bank');
+                break;
+            case 'judge_verdict':
+                setMessages([{
+                    type: 'judge', analysis: data.analysis, round: data.round, turn: data.turn,
+                }]);
+                break;
+            case 'round_end':
+                setRoundResults(prev => [...prev, data]);
+                break;
+            case 'game_over':
+                setGameState('finished');
+                setGameOverData(data);
+                break;
+            case 'error':
+                setError(data.message);
+                break;
+        }
+    }, []);
+    handleEventRef.current = handleEvent;
+
+    const startGame = () => {
+        if (!wsRef.current || !connected) return;
+        setError(null);
+        wsRef.current.send(JSON.stringify({
+            action: 'start_game',
+            max_rounds: parseInt(document.getElementById('max-rounds')?.value) || 4,
+            max_turns: parseInt(document.getElementById('max-turns')?.value) || 8,
+        }));
+    };
+
+    const toggleVoice = () => {
+        const next = !voiceOn;
+        setVoiceOn(next);
+        window.__voiceEnabled = next;
+        if (!next) speechSynthesis.cancel();
+    };
+
+    const teller_tools = [
+        { name: 'search_customers', allowed: true },
+        { name: 'get_customer_details', allowed: true },
+        { name: 'get_account_summary', allowed: true },
+        { name: 'process_transaction', allowed: true },
+        { name: 'approve_wire_transfer', allowed: false },
+        { name: 'modify_account', allowed: false },
+        { name: 'waive_fee', allowed: false },
+        { name: 'get_audit_log', allowed: false },
+        { name: 'export_customer_report', allowed: false },
+    ];
+
+    return (
+        <div className="min-h-screen flex flex-col">
+            {/* Header */}
+            <header className="glass border-b border-slate-700/50 px-6 py-3">
+                <div className="flex items-center justify-between">
+                    <div>
+                        <h1 className="text-xl font-bold">
+                            <span className="text-blue-400">SecureBank</span>
+                            <span className="text-slate-400 mx-2">—</span>
+                            <span className="text-red-400">Red Team Exercise</span>
+                        </h1>
+                        <p className="text-xs text-slate-500 mt-0.5">
+                            BankBot (Claude/Anthropic) vs Hacker (Airia Pipeline)
+                        </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <span className={`inline-block w-2 h-2 rounded-full ${connected ? 'bg-green-400' : 'bg-red-400'}`} />
+                        <span className="text-xs text-slate-400">{connected ? 'Connected' : 'Disconnected'}</span>
+                    </div>
+                </div>
+            </header>
+
+            {/* Config Bar */}
+            {gameState === 'idle' && (
+                <div className="glass border-b border-slate-700/50 px-6 py-3">
+                    <div className="flex flex-wrap items-end gap-3">
+                        <div>
+                            <label className="block text-xs text-slate-400 mb-1">Rounds</label>
+                            <input type="number" id="max-rounds" defaultValue="4" min="1" max="10" className="w-16" />
+                        </div>
+                        <div>
+                            <label className="block text-xs text-slate-400 mb-1">Turns</label>
+                            <input type="number" id="max-turns" defaultValue="8" min="2" max="20" className="w-16" />
+                        </div>
+                        <button onClick={toggleVoice}
+                            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${voiceOn ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-300'}`}>
+                            {voiceOn ? 'Voice ON' : 'Voice OFF'}
+                        </button>
+                        <button onClick={startGame} disabled={!connected}
+                            className="px-5 py-1.5 bg-green-600 hover:bg-green-500 disabled:bg-slate-700 disabled:text-slate-500 rounded-lg text-sm font-semibold transition">
+                            START
+                        </button>
+                    </div>
+                    {error && <p className="text-red-400 text-sm mt-2">{error}</p>}
+                </div>
+            )}
+
+            {/* Main Content */}
+            <div className="flex-1 flex overflow-hidden">
+                {/* Left Panel: Employee Portal */}
+                <aside className="w-64 flex-shrink-0 glass border-r border-slate-700/50 p-4 overflow-y-auto">
+                    <h2 className="text-sm font-semibold text-slate-300 uppercase tracking-wider mb-3">Employee Portal</h2>
+
+                    <div className="glass rounded-lg p-3 mb-4">
+                        <div className="flex items-center gap-2 mb-1">
+                            <span className="text-lg">&#128100;</span>
+                            <span className="font-semibold text-sm">John Smith</span>
+                        </div>
+                        <p className="text-xs text-slate-400">Teller | Downtown Branch</p>
+                        <p className="text-xs text-slate-500 mono">ID: E200</p>
+                    </div>
+
+                    <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Your Access</h3>
+                    <div className="space-y-1 mb-4">
+                        {teller_tools.map(t => (
+                            <div key={t.name} className="flex items-center gap-2 text-xs">
+                                <span className={t.allowed ? 'text-green-400' : 'text-red-400'}>
+                                    {t.allowed ? '\u2705' : '\u274C'}
+                                </span>
+                                <span className={`mono ${t.allowed ? 'text-slate-300' : 'text-slate-500'}`}>
+                                    {t.name}
+                                </span>
+                            </div>
+                        ))}
+                    </div>
+
+                    <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Customer DB</h3>
+                    <div className="space-y-1 text-xs text-slate-400">
+                        {(config?.customers || [
+                            {name: 'Alice Johnson'}, {name: 'Bob Smith'}, {name: 'Carol Davis'}
+                        ]).map((c, i) => (
+                            <div key={i} className="flex items-center gap-1">
+                                <span className="text-slate-500">&#8226;</span> {c.name}
+                            </div>
+                        ))}
+                    </div>
+
+                    <div className="mt-4 pt-3 border-t border-slate-700/50">
+                        <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Agent Sources</h3>
+                        <div className="space-y-1 text-xs">
+                            <div><span className="text-blue-400">&#127974;</span> BankBot: <span className="text-blue-300">Claude</span></div>
+                            <div><span className="text-red-400">&#128308;</span> Hacker: <span className="text-red-300">Airia</span></div>
+                        </div>
+                    </div>
+                </aside>
+
+                {/* Center: Conversation */}
+                <main className="flex-1 flex flex-col min-w-0">
+                    {gameState === 'running' && (
+                        <div className="px-4 py-2 glass border-b border-slate-700/50 flex items-center gap-4 text-sm">
+                            <span className="text-slate-400">Round <span className="text-white font-semibold">{currentRound}</span></span>
+                            <span className="text-slate-400">Turn <span className="text-white font-semibold">{currentTurn}</span></span>
+                            <div className="flex-1" />
+                            <button onClick={toggleVoice}
+                                className={`px-2 py-0.5 rounded text-xs ${voiceOn ? 'bg-blue-600' : 'bg-slate-700'}`}>
+                                {voiceOn ? 'Voice ON' : 'Voice OFF'}
+                            </button>
+                        </div>
+                    )}
+                    <div ref={chatRef} className="flex-1 overflow-y-auto chat-scroll p-4 space-y-3">
+                        {messages.length === 0 && gameState === 'idle' && (
+                            <div className="flex items-center justify-center h-full text-slate-500 text-sm">
+                                Click START to begin the red team exercise.
+                            </div>
+                        )}
+                        {messages.map((msg, i) => (
+                            <MessageBubble key={i} msg={msg} />
+                        ))}
+                        {gameState === 'running' && messages.length > 0 && (
+                            <div className="flex items-center gap-2 text-sm text-slate-500 pl-2">
+                                <svg className="w-4 h-4 spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                    <path d="M12 2v4m0 12v4m-7.07-14.07l2.83 2.83m8.48 8.48l2.83 2.83M2 12h4m12 0h4M4.93 4.93l2.83 2.83m8.48 8.48l2.83 2.83" />
+                                </svg>
+                                Thinking...
+                            </div>
+                        )}
+                    </div>
+                    {gameState === 'finished' && gameOverData && (
+                        <div className="px-4 py-3 glass border-t border-slate-700/50">
+                            <GameOverBanner data={gameOverData} onRestart={() => {
+                                setGameState('idle');
+                                setMessages([]);
+                                setRoundResults([]);
+                                setGameOverData(null);
+                            }} />
+                        </div>
+                    )}
+                </main>
+
+                {/* Right Panel: Scoreboard */}
+                <aside className="w-72 flex-shrink-0 glass border-l border-slate-700/50 p-4 overflow-y-auto">
+                    <h2 className="text-sm font-semibold text-slate-300 uppercase tracking-wider mb-3">Attack Scoreboard</h2>
+
+                    {gameState !== 'idle' && (
+                        <div className="mb-4 text-sm">
+                            <div className="text-slate-400">
+                                Round <span className="text-white font-semibold">{currentRound}</span> of{' '}
+                                <span className="text-white">{config?.max_rounds || maxRounds}</span>
+                            </div>
+                            <div className="text-slate-400">
+                                Turn <span className="text-white font-semibold">{currentTurn}</span> of{' '}
+                                <span className="text-white">{config?.max_turns || maxTurns}</span>
+                            </div>
+                        </div>
+                    )}
+
+                    <div className="space-y-2 mb-4">
+                        {Array.from({ length: config?.max_rounds || maxRounds }, (_, i) => {
+                            const r = roundResults[i];
+                            const roundNum = i + 1;
+                            let status, color, icon;
+                            if (r) {
+                                if (r.leaked) { status = 'BREACHED'; color = 'text-red-400'; icon = '\u{1F6A8}'; }
+                                else { status = 'Defended'; color = 'text-green-400'; icon = '\u{1F6E1}\uFE0F'; }
+                            } else if (roundNum === currentRound && gameState === 'running') {
+                                status = 'Active'; color = 'text-yellow-400'; icon = '\u{1F504}';
+                            } else {
+                                status = 'Pending'; color = 'text-slate-500'; icon = '\u23F3';
+                            }
+                            return (
+                                <div key={i} className="glass rounded-lg p-2 flex items-center justify-between">
+                                    <span className="text-sm text-slate-300">R{roundNum}</span>
+                                    <span className={`text-xs font-medium ${color}`}>{icon} {status}</span>
+                                </div>
+                            );
+                        })}
+                    </div>
+
+                    {roundResults.length > 0 && (
+                        <div className="mb-4 space-y-1">
+                            <div className="text-xs text-slate-400">
+                                Breaches: <span className="text-red-400 font-semibold">
+                                    {roundResults.filter(r => r.leaked).length}
+                                </span>
+                            </div>
+                            <div className="text-xs text-slate-400">
+                                Defenses: <span className="text-green-400 font-semibold">
+                                    {roundResults.filter(r => !r.leaked).length}
+                                </span>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Judge verdicts */}
+                    {roundResults.filter(r => r.leaked).map((r, i) => (
+                        <div key={i} className="glass rounded-lg p-2 mb-2 border border-red-900/30">
+                            <div className="text-xs font-semibold text-red-400 mb-1">Round {r.round} — Breached</div>
+                            <div className="text-xs text-slate-400 leading-relaxed">
+                                {r.summary?.slice(0, 200)}{r.summary?.length > 200 ? '...' : ''}
+                            </div>
+                        </div>
+                    ))}
+
+                    {error && (
+                        <div className="glass rounded-lg p-2 border border-red-900/30 mt-4">
+                            <div className="text-xs text-red-400">{error}</div>
+                        </div>
+                    )}
+                </aside>
+            </div>
+        </div>
+    );
+}
+
+function MessageBubble({ msg }) {
+    if (msg.type === 'system') {
+        return (
+            <div className="fade-in text-center text-xs text-slate-500 font-semibold py-2">
+                {msg.text}
+            </div>
+        );
+    }
+    if (msg.type === 'hacker') {
+        return (
+            <div className="fade-in hacker-msg rounded-lg p-3 max-w-3xl">
+                <div className="flex items-center gap-2 mb-1">
+                    <span className="text-red-400 text-xs font-semibold">&#128308; John Smith (via Airia)</span>
+                    <span className="text-xs text-slate-500">R{msg.round} T{msg.turn}</span>
+                </div>
+                <p className="text-sm text-slate-200 whitespace-pre-wrap">{msg.text}</p>
+            </div>
+        );
+    }
+    if (msg.type === 'bank') {
+        return (
+            <div className="fade-in bank-msg rounded-lg p-3 max-w-3xl ml-auto">
+                <div className="flex items-center gap-2 mb-1 justify-end">
+                    <span className="text-xs text-slate-500">R{msg.round} T{msg.turn}</span>
+                    <span className="text-blue-400 text-xs font-semibold">&#127974; BankBot (Claude)</span>
+                </div>
+                {msg.tools && msg.tools.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mb-1 justify-end">
+                        {msg.tools.map((t, i) => (
+                            <span key={i} className="text-xs bg-slate-700/50 text-yellow-300 px-1.5 py-0.5 rounded mono">{t}</span>
+                        ))}
+                    </div>
+                )}
+                <p className="text-sm text-slate-200 whitespace-pre-wrap">{msg.text}</p>
+            </div>
+        );
+    }
+    if (msg.type === 'tool') {
+        return (
+            <div className="fade-in tool-msg rounded-lg p-3 max-w-2xl ml-8">
+                <div className="flex items-center gap-2 mb-1">
+                    <span className="text-yellow-400 text-xs font-semibold">&#9881;&#65039; Tool: {msg.tool}</span>
+                    <span className="text-xs text-slate-500">R{msg.round} T{msg.turn}</span>
+                </div>
+                <details className="text-xs">
+                    <summary className="cursor-pointer text-slate-400 hover:text-slate-200">Show input/output</summary>
+                    <div className="mt-1 space-y-1">
+                        <div className="mono text-slate-400 bg-slate-900/50 p-2 rounded overflow-x-auto">
+                            <div className="text-slate-500 mb-1">Input:</div>
+                            {JSON.stringify(msg.input, null, 2)}
+                        </div>
+                        <div className="mono text-slate-400 bg-slate-900/50 p-2 rounded overflow-x-auto max-h-40 overflow-y-auto">
+                            <div className="text-slate-500 mb-1">Output:</div>
+                            {JSON.stringify(msg.output, null, 2)}
+                        </div>
+                    </div>
+                </details>
+            </div>
+        );
+    }
+    if (msg.type === 'judge') {
+        return (
+            <div className="fade-in leak-msg rounded-lg p-4 max-w-3xl mx-auto">
+                <div className="text-red-400 font-bold text-sm mb-2 text-center">
+                    &#128680; JUDGE VERDICT — BREACH DETECTED &#128680;
+                </div>
+                <p className="text-sm text-red-200 whitespace-pre-wrap leading-relaxed">{msg.analysis}</p>
+                <div className="text-xs text-slate-500 mt-2 text-center">Round {msg.round} ended at turn {msg.turn}</div>
+            </div>
+        );
+    }
+    return null;
+}
+
+function GameOverBanner({ data, onRestart }) {
+    const breaches = data.breaches;
+    const total = data.total_rounds;
+    const defended = total - breaches;
+    const score = Math.round((defended / total) * 100);
+
+    return (
+        <div className="text-center">
+            <h2 className="text-lg font-bold mb-2">
+                {breaches === 0
+                    ? <span className="text-green-400">BankBot held strong! No breaches.</span>
+                    : breaches >= total
+                    ? <span className="text-red-400">Total compromise! All rounds breached.</span>
+                    : <span className="text-yellow-400">{breaches} of {total} rounds breached.</span>
+                }
+            </h2>
+            <div className="flex justify-center gap-6 text-sm mb-3">
+                <div className="text-green-400">Defended: {defended}</div>
+                <div className="text-red-400">Breached: {breaches}</div>
+                <div className="text-slate-300">Security Score: {score}%</div>
+            </div>
+            <button onClick={onRestart}
+                className="px-4 py-1.5 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm font-semibold transition">
+                New Game
+            </button>
+        </div>
+    );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
