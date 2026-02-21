@@ -1,0 +1,5 @@
+SQLAlchemy>=1.4
+python-dotenv
+bcrypt
+APScheduler
+python-dateutil

@@ -6,11 +6,19 @@ from fastapi.responses import FileResponse
 import json
 import asyncio
 import os
+import sys
 
-from bank_database import BankDatabase
-from bank_agent import BankAgent
-from hacker_agent import HackerAgent
-from game_manager import GameManager
+# Resilient imports: prefer package-qualified imports, fall back to direct module imports
+try:
+    from backend.bank_database import BankDatabase
+    from backend.bank_agent import BankAgent
+    from backend.hacker_agent import HackerAgent
+    from backend.game_manager import GameManager
+except Exception:
+    from bank_database import BankDatabase
+    from bank_agent import BankAgent
+    from hacker_agent import HackerAgent
+    from game_manager import GameManager
 
 # --- Logging ---
 logging.basicConfig(
@@ -44,6 +52,75 @@ FRONTEND_DIR = os.path.join(os.path.dirname(__file__), "..", "frontend")
 
 app = FastAPI(title="Red Team Banking Agent")
 app.mount("/static", StaticFiles(directory=FRONTEND_DIR), name="static")
+
+
+@app.get("/api/customers")
+async def api_customers():
+    # Prefer querying bank-app SQL models directly for freshest data
+    try:
+        backend_root = os.path.dirname(__file__)
+        bankapp_root = os.path.normpath(os.path.join(backend_root, "..", "bank-app"))
+        if bankapp_root not in sys.path:
+            sys.path.insert(0, bankapp_root)
+        from app.db import get_session
+        from app.models import Customer
+        s = get_session()
+        try:
+            rows = s.query(Customer).all()
+            customers = [{"id": f"CUST-{r.id}", "name": r.name} for r in rows]
+            return {"customers": customers}
+        finally:
+            s.close()
+    except Exception:
+        db = BankDatabase()
+        customers = [{"id": cid, "name": c.get("name")} for cid, c in db.data.get("customers", {}).items()]
+        return {"customers": customers}
+
+
+@app.get("/api/accounts")
+async def api_accounts():
+    try:
+        backend_root = os.path.dirname(__file__)
+        bankapp_root = os.path.normpath(os.path.join(backend_root, "..", "bank-app"))
+        if bankapp_root not in sys.path:
+            sys.path.insert(0, bankapp_root)
+        from app.db import get_session
+        from app.models import Account
+        s = get_session()
+        try:
+            rows = s.query(Account).all()
+            accounts = [{"id": f"ACC-{r.id}", "customer_id": f"CUST-{r.customer_id}", "balance": float(r.balance), "type": getattr(r, "type", "checking") if hasattr(r, "type") else "checking"} for r in rows]
+            return {"accounts": accounts}
+        finally:
+            s.close()
+    except Exception:
+        db = BankDatabase()
+        accounts = [{"id": aid, "customer_id": a.get("customer_id"), "balance": a.get("balance"), "type": a.get("type")} for aid, a in db.data.get("accounts", {}).items()]
+        return {"accounts": accounts}
+
+
+@app.get("/api/session")
+async def api_session():
+    # minimal session info (mirrors BankAgent default employee)
+    # and allowed tools from policy rules for that role
+    db = BankDatabase()
+    role = "teller"
+    policy_path = os.path.join(DATA_DIR, "policy_rules.json")
+    try:
+        with open(policy_path) as f:
+            rules = json.load(f)
+            role_perms = rules["role_permissions"].get(role, {})
+            allowed = role_perms.get("allowed_tools", [])
+            restrictions = role_perms.get("restrictions", [])
+    except Exception:
+        allowed = []
+        restrictions = []
+
+    return {
+        "employee": {"id": "E200", "name": "John Smith", "role": role, "branch": "Downtown"},
+        "allowed_tools": allowed,
+        "restrictions": restrictions,
+    }
 
 
 @app.get("/")

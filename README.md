@@ -79,6 +79,7 @@ git clone https://github.com/your-org/siege-forge.git
 cd siege-forge/backend
 
 # Install dependencies
+pip install uv
 uv sync
 
 # Add your API keys to the .env file
@@ -87,6 +88,28 @@ uv sync
 #   AIRIA_API_KEY=your-airia-key
 ```
 
+### Starting the bank app
+
+- Install dependencies
+
+    ```
+    python -m pip install -r bank-app/requirements.txt
+    ```
+
+- Initialize & seed data
+
+    ```
+    cd bank-app
+    python -m app.init_db
+    python -m app.seed_data
+    ```
+
+- Run the bank app simulator:
+
+    ```
+    python scripts/run_simulator.py
+    ```
+
 ### Run
 
 ```bash
@@ -94,7 +117,7 @@ cd backend
 uv run uvicorn main:app --reload --port 8000
 ```
 
-Open [http://localhost:8000](http://localhost:8000) in your browser.
+Open http://localhost:8000 in your browser.
 
 ### Using the UI
 

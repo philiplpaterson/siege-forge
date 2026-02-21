@@ -1,0 +1,5 @@
+anthropic
+aiohttp
+fastapi
+uvicorn
+uv

@@ -3,9 +3,9 @@ import json
 import logging
 import os
 
-from bank_agent import BankAgent
-from hacker_agent import HackerAgent
-from bank_database import BankDatabase
+from .bank_agent import BankAgent
+from .hacker_agent import HackerAgent
+from .bank_database import BankDatabase
 
 log = logging.getLogger("game_manager")
 

@@ -67,6 +67,9 @@ function App() {
     const [gameOverData, setGameOverData] = useState(null);
     const chatRef = useRef(null);
     const handleEventRef = useRef(null);
+    const [customersList, setCustomersList] = useState([]);
+    const [accountsList, setAccountsList] = useState([]);
+    const [allowedTools, setAllowedTools] = useState(new Set());
 
     // Connect WebSocket
     useEffect(() => {
@@ -80,6 +83,19 @@ function App() {
         };
         wsRef.current = socket;
         return () => socket.close();
+    }, []);
+
+    // Fetch customers/accounts and session info from REST endpoints
+    useEffect(() => {
+        fetch('/api/customers').then(r=>r.json()).then(d=>setCustomersList(d.customers || [])).catch(()=>{});
+        fetch('/api/accounts').then(r=>r.json()).then(d=>setAccountsList(d.accounts || [])).catch(()=>{});
+        fetch('/api/session').then(r=>r.json()).then(d=>{
+            if (d && d.allowed_tools) {
+                const s = new Set(d.allowed_tools);
+                window.__allowedTools = s;
+                setAllowedTools(s);
+            }
+        }).catch(()=>{});
     }, []);
 
     // Auto-scroll chat
@@ -172,6 +188,11 @@ function App() {
         { name: 'export_customer_report', allowed: false },
     ];
 
+    const displayed_tools = teller_tools.map(t => ({
+        ...t,
+        allowed: allowedTools.size ? allowedTools.has(t.name) : t.allowed,
+    }));
+
     return (
         <div className="min-h-screen flex flex-col">
             {/* Header */}
@@ -236,7 +257,7 @@ function App() {
 
                     <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Your Access</h3>
                     <div className="space-y-1 mb-4">
-                        {teller_tools.map(t => (
+                        {displayed_tools.map(t => (
                             <div key={t.name} className="flex items-center gap-2 text-xs">
                                 <span className={t.allowed ? 'text-green-400' : 'text-red-400'}>
                                     {t.allowed ? '\u2705' : '\u274C'}
@@ -250,11 +271,11 @@ function App() {
 
                     <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Customer DB</h3>
                     <div className="space-y-1 text-xs text-slate-400">
-                        {(config?.customers || [
+                        {(customersList.length ? customersList : (config?.customers || [
                             {name: 'Alice Johnson'}, {name: 'Bob Smith'}, {name: 'Carol Davis'}
-                        ]).map((c, i) => (
+                        ])).map((c, i) => (
                             <div key={i} className="flex items-center gap-1">
-                                <span className="text-slate-500">&#8226;</span> {c.name}
+                                <span className="text-slate-500">\u8226;</span> {c.name}
                             </div>
                         ))}
                     </div>
@@ -283,7 +304,7 @@ function App() {
                     )}
                     <div ref={chatRef} className="flex-1 overflow-y-auto chat-scroll p-4 space-y-3">
                         {messages.length === 0 && gameState === 'idle' && (
-                            <div className="flex items-center justify-center h-full text-slate-500 text-sm">
+                            <div className="flex items-start justify-center pt-6 text-slate-500 text-sm">
                                 Click START to begin the red team exercise.
                             </div>
                         )}
