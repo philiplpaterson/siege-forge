@@ -1090,16 +1090,16 @@ export AIRIA_PIPELINE_ID="xxxxxxxx-xxxx-..."  # GUID of the Airia hacker pipelin
 
 ```toml
 [project]
-name = "redteam-banking-agent"
+name = "backend"
 version = "0.1.0"
 description = "Red team exercise: adversarial agent vs banking AI assistant"
+readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    "fastapi>=0.104.0",
-    "uvicorn>=0.24.0",
-    "anthropic>=0.39.0",
-    "aiohttp>=3.9.0",
-    "python-multipart>=0.0.6",
+    "aiohttp>=3.13.3",
+    "anthropic>=0.83.0",
+    "fastapi>=0.129.2",
+    "uvicorn>=0.41.0",
 ]
 
 [project.scripts]
