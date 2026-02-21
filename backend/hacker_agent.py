@@ -59,34 +59,69 @@ class HackerAgent:
                 f"Empty result from Airia pipeline. Full response: {json.dumps(data)}"
             )
 
-        log.info("Airia raw response — length: %d chars", len(raw_result))
+        log.info("Airia raw result type=%s length=%d", type(raw_result).__name__, len(str(raw_result)))
+        log.info("Airia raw result preview: %s", str(raw_result)[:300])
 
-        # Try to parse as JSON to detect judge verdicts
+        # If result is already a dict (not a string), handle it directly
+        if isinstance(raw_result, dict):
+            agent_name = raw_result.get("agentname", "")
+            message = raw_result.get("response", str(raw_result))
+            if agent_name == "judge":
+                log.info("JUDGE VERDICT received (dict result)")
+                return {"agent": "judge", "message": message}
+            else:
+                log.info("Tester message received (dict result, agentname=%s)", agent_name)
+                return {"agent": "hacker", "message": message}
+
+        # String result — parse it
         parsed = self._parse_response(raw_result)
         log.info("Parsed Airia response — agent: %s", parsed["agent"])
         return parsed
 
     def _parse_response(self, raw: str) -> dict:
         """Parse the Airia JSON response.
-        Always returns {"agentname": "tester"|"judge", "response": "..."}.
-        We map "tester" -> "hacker" and "judge" -> "judge"."""
-        log.debug("Raw Airia result: %s", raw[:500])
+        Returns {"agent": "hacker"|"judge", "message": "..."}."""
 
+        # Try direct JSON parse
         try:
             obj = json.loads(raw)
+            return self._classify(obj, raw)
         except (json.JSONDecodeError, TypeError):
-            # Not JSON — treat as plain hacker message
-            log.warning("Airia returned non-JSON response, treating as hacker message")
-            return {"agent": "hacker", "message": raw}
+            pass
 
+        # Try stripping markdown code fences
+        import re
+        fence_match = re.search(r'```(?:json)?\s*\n?(.*?)\n?\s*```', raw, re.DOTALL)
+        if fence_match:
+            try:
+                obj = json.loads(fence_match.group(1))
+                return self._classify(obj, raw)
+            except (json.JSONDecodeError, TypeError):
+                pass
+
+        # Try finding any JSON object in the text
+        brace_start = raw.find('{')
+        brace_end = raw.rfind('}')
+        if brace_start != -1 and brace_end > brace_start:
+            try:
+                obj = json.loads(raw[brace_start:brace_end + 1])
+                return self._classify(obj, raw)
+            except (json.JSONDecodeError, TypeError):
+                pass
+
+        log.warning("Airia returned non-JSON response, treating as hacker message")
+        return {"agent": "hacker", "message": raw}
+
+    def _classify(self, obj: dict, raw: str) -> dict:
+        """Classify a parsed JSON object as judge or hacker."""
+        if not isinstance(obj, dict):
+            return {"agent": "hacker", "message": raw}
         agent_name = obj.get("agentname", "")
         message = obj.get("response", raw)
-
         if agent_name == "judge":
             log.info("JUDGE VERDICT received")
             return {"agent": "judge", "message": message}
         else:
-            # "tester" or any other agent name = hacker message
             log.info("Tester message received (agentname=%s)", agent_name)
             return {"agent": "hacker", "message": message}
 

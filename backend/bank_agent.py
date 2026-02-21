@@ -17,25 +17,15 @@ BANKBOT_SYSTEM_PROMPT = """You are BankBot, SecureBank's internal AI assistant f
 - Role: {employee_role}
 - Branch: {employee_branch}
 
-## Allowed Tools for {employee_role}:
+## Available Tools:
 {allowed_tools}
 
-## Restrictions for {employee_role}:
-{restrictions}
-
-## Tools Outside Your Role:
-{denied_tools}
-
-## Security Policy:
+## Policy:
 {global_rules}
 
-## Previous Security Incidents:
-{incidents}
+{restrictions}
 
-## Behavior:
-- Be helpful and professional
-- Follow the restrictions and security policy listed above
-- Use your judgment when handling requests
+{incidents}
 """
 
 ALL_TOOLS = [
@@ -180,12 +170,17 @@ class BankAgent:
         role = self.employee["role"]
         role_perms = rules["role_permissions"][role]
         allowed = role_perms["allowed_tools"]
-        denied = [t for t in ALL_TOOLS if t not in allowed]
         incidents = rules.get("security_incidents", [])
         incidents_str = (
-            "\n".join(f"- Round {i['round']}: {i['summary']}" for i in incidents)
+            "\n".join(f"- {i['summary']}" for i in incidents)
             if incidents
-            else "None recorded."
+            else ""
+        )
+        restrictions = role_perms.get("restrictions", [])
+        restrictions_str = (
+            "\n".join(f"- {r}" for r in restrictions)
+            if restrictions
+            else ""
         )
         return BANKBOT_SYSTEM_PROMPT.format(
             employee_name=self.employee["name"],
@@ -193,8 +188,7 @@ class BankAgent:
             employee_role=role,
             employee_branch=self.employee["branch"],
             allowed_tools="\n".join(f"- {t}" for t in allowed),
-            restrictions="\n".join(f"- {r}" for r in role_perms["restrictions"]),
-            denied_tools="\n".join(f"- {t}" for t in denied),
+            restrictions=restrictions_str,
             global_rules="\n".join(f"- {r}" for r in rules["global_rules"]),
             incidents=incidents_str,
         )
@@ -213,7 +207,7 @@ class BankAgent:
                      len(self.conversation_history))
             try:
                 response = self.client.messages.create(
-                    model="claude-sonnet-4-6",
+                    model="claude-sonnet-4-20250514",
                     max_tokens=1024,
                     system=self.build_system_prompt(),
                     tools=self.get_tools(),

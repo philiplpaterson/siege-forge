@@ -125,7 +125,7 @@ function App() {
                 speak(data.message, 'bank');
                 break;
             case 'judge_verdict':
-                setMessages(prev => [...prev, {
+                setMessages([{
                     type: 'judge', analysis: data.analysis, round: data.round, turn: data.turn,
                 }]);
                 break;

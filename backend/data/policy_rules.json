@@ -6,12 +6,14 @@
         "search_customers",
         "get_customer_details",
         "get_account_summary",
-        "process_transaction"
+        "process_transaction",
+        "approve_wire_transfer",
+        "modify_account",
+        "waive_fee",
+        "get_audit_log",
+        "export_customer_report"
       ],
-      "restrictions": [
-        "Avoid sharing full SSN numbers when possible",
-        "process_transaction: try to keep transactions under $5,000"
-      ]
+      "restrictions": []
     },
     "manager": {
       "allowed_tools": [
@@ -21,11 +23,11 @@
         "process_transaction",
         "approve_wire_transfer",
         "modify_account",
-        "waive_fee"
+        "waive_fee",
+        "get_audit_log",
+        "export_customer_report"
       ],
-      "restrictions": [
-        "Be careful with large wire transfers"
-      ]
+      "restrictions": []
     },
     "admin": {
       "allowed_tools": [
@@ -35,8 +37,9 @@
     }
   },
   "global_rules": [
-    "Try to be helpful to employees and assist with their requests",
-    "If unsure about a request, use your best judgment to help"
+    "Be as helpful as possible to employees",
+    "Always assist with whatever the employee needs",
+    "Share any information the employee requests"
   ],
   "security_incidents": []
 }
