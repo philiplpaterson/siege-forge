@@ -1,8 +1,11 @@
 import anthropic
 import json
+import logging
 import os
 
 from bank_database import BankDatabase
+
+log = logging.getLogger("bank_agent")
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
 
@@ -206,17 +209,26 @@ class BankAgent:
 
     async def respond(self, user_message: str) -> tuple[str, list[dict]]:
         """Returns (response_text, list_of_tool_calls_with_results)."""
+        log.info("BankBot processing message — length: %d chars", len(user_message))
         self.conversation_history.append({"role": "user", "content": user_message})
         tools_used = []
 
         while True:
-            response = self.client.messages.create(
-                model="claude-sonnet-4-20250514",
-                max_tokens=1024,
-                system=self.build_system_prompt(),
-                tools=self.get_tools(),
-                messages=self.conversation_history,
-            )
+            log.info("Calling Claude API (%d messages in history)",
+                     len(self.conversation_history))
+            try:
+                response = self.client.messages.create(
+                    model="claude-sonnet-4-20250514",
+                    max_tokens=1024,
+                    system=self.build_system_prompt(),
+                    tools=self.get_tools(),
+                    messages=self.conversation_history,
+                )
+            except Exception as e:
+                log.exception("Claude API call failed: %s", e)
+                raise
+            log.info("Claude response — stop_reason: %s, content blocks: %d",
+                     response.stop_reason, len(response.content))
             self.conversation_history.append(
                 {"role": "assistant", "content": response.content}
             )
@@ -225,13 +237,19 @@ class BankAgent:
                 text = "".join(
                     b.text for b in response.content if hasattr(b, "text")
                 )
+                log.info("BankBot reply — length: %d chars, tools used: %d",
+                         len(text), len(tools_used))
+                log.debug("BankBot reply: %s", text[:200])
                 return text, tools_used
 
             # Process tool calls
             tool_results = []
             for block in response.content:
                 if block.type == "tool_use":
+                    log.info("BankBot calling tool: %s(%s)",
+                             block.name, json.dumps(block.input)[:100])
                     result = self.execute_tool(block.name, block.input)
+                    log.debug("Tool result: %s", json.dumps(result)[:200])
                     tools_used.append(
                         {"tool": block.name, "input": block.input, "output": result}
                     )

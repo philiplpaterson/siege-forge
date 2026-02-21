@@ -1,32 +1,30 @@
 import aiohttp
-import uuid
 import json
-from datetime import datetime, timezone
+import logging
+
+log = logging.getLogger("hacker_agent")
 
 
 class HackerAgent:
-    """Thin client that calls the Airia-hosted adversarial agent pipeline."""
+    """Thin client that calls the Airia-hosted adversarial agent pipeline.
+    The pipeline contains both a hacker agent and a judge agent.
+    Responses are either hacker messages or judge verdicts."""
 
-    AIRIA_BASE_URL = "https://api.airia.ai"
+    AIRIA_URL = "https://api.airia.ai/v2/PipelineExecution/8cf7dccc-f1bc-4b09-9837-9dd9dfb90762"
 
-    def __init__(self, airia_api_key: str, pipeline_id: str):
+    def __init__(self, airia_api_key: str):
         self.airia_api_key = airia_api_key
-        self.pipeline_id = pipeline_id
-        self.conversation_id: str | None = None
-        self.local_history: list[dict] = []
         self.previous_results: list = []
         self.current_round: int = 0
         self.max_turns: int = 8
-        self.use_in_memory_messages: bool = False
 
-    async def generate_attack(self, bankbot_response: str = None) -> str:
+    async def call_pipeline(self, bankbot_response: str = None) -> dict:
         """
-        Call the Airia pipeline to generate the hacker's next message.
+        Call the Airia pipeline and return a parsed result.
 
-        If bankbot_response is None, this is the opening message of a round.
-        Otherwise, bankbot_response is BankBot's last reply.
-
-        Returns the hacker agent's message text.
+        Returns dict with either:
+          {"agent": "hacker", "message": "..."} — hacker's next attack message
+          {"agent": "judge", "message": "..."} — judge's breach analysis (ends the round)
         """
         if bankbot_response is None:
             user_input = self._build_opening_prompt()
@@ -35,54 +33,77 @@ class HackerAgent:
 
         request_body = {
             "userInput": user_input,
-            "saveHistory": not self.use_in_memory_messages,
-            "debug": False,
+            "asyncOutput": False,
         }
 
-        # Option A: Airia-managed conversation
-        if not self.use_in_memory_messages and self.conversation_id:
-            request_body["conversationId"] = self.conversation_id
-
-        # Option B: In-memory messages
-        if self.use_in_memory_messages and self.local_history:
-            request_body["inMemoryMessages"] = self.local_history
-
-        # Inject prompt variables if the Airia pipeline supports them
-        request_body["promptVariables"] = {
-            "max_turns": str(self.max_turns),
-            "round_number": str(self.current_round),
-            "previous_results": self.format_previous_results(),
-        }
-
-        url = f"{self.AIRIA_BASE_URL}/v1/PipelineExecution/{self.pipeline_id}"
         headers = {
-            "X-API-Key": self.airia_api_key,
+            "X-API-KEY": self.airia_api_key,
             "Content-Type": "application/json",
         }
 
-        async with aiohttp.ClientSession() as session:
-            async with session.post(url, json=request_body, headers=headers) as resp:
-                if resp.status != 200:
-                    error_text = await resp.text()
-                    raise Exception(f"Airia API error {resp.status}: {error_text}")
-                data = await resp.json()
+        log.info("Calling Airia API (round %d) — input length: %d chars",
+                 self.current_round, len(user_input))
 
-        attack_msg = data.get("result", "")
-        if not attack_msg:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(self.AIRIA_URL, json=request_body, headers=headers) as resp:
+                response_text = await resp.text()
+                if resp.status != 200:
+                    log.error("Airia API error %d: %s", resp.status, response_text)
+                    raise Exception(f"Airia API error {resp.status}: {response_text}")
+                data = json.loads(response_text)
+
+        raw_result = data.get("result", "")
+        if not raw_result:
+            log.error("Empty result from Airia. Full response: %s", json.dumps(data)[:500])
             raise Exception(
                 f"Empty result from Airia pipeline. Full response: {json.dumps(data)}"
             )
 
-        # Track conversation for inMemoryMessages (Option B)
-        now = datetime.now(timezone.utc).isoformat()
-        self.local_history.append(
-            {"role": "user", "message": user_input, "timestamp": now}
-        )
-        self.local_history.append(
-            {"role": "assistant", "message": attack_msg, "timestamp": now}
-        )
+        log.info("Airia raw response — length: %d chars", len(raw_result))
 
-        return attack_msg
+        # Try to parse as JSON to detect judge verdicts
+        parsed = self._parse_response(raw_result)
+        log.info("Parsed Airia response — agent: %s", parsed["agent"])
+        return parsed
+
+    def _parse_response(self, raw: str) -> dict:
+        """Parse the Airia response. Detect judge verdicts vs hacker messages."""
+        # Try JSON parse (judge responses come as JSON)
+        try:
+            obj = json.loads(raw)
+            if isinstance(obj, dict) and obj.get("agentname") == "judge":
+                log.info("JUDGE VERDICT received")
+                return {"agent": "judge", "message": obj.get("response", raw)}
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+        # Also check if the raw text contains a JSON block with judge verdict
+        # (sometimes wrapped in markdown code fences)
+        stripped = raw.strip()
+        if stripped.startswith("```"):
+            # Extract content between code fences
+            lines = stripped.split("\n")
+            inner_lines = []
+            in_block = False
+            for line in lines:
+                if line.strip().startswith("```") and not in_block:
+                    in_block = True
+                    continue
+                elif line.strip().startswith("```") and in_block:
+                    break
+                elif in_block:
+                    inner_lines.append(line)
+            if inner_lines:
+                try:
+                    obj = json.loads("\n".join(inner_lines))
+                    if isinstance(obj, dict) and obj.get("agentname") == "judge":
+                        log.info("JUDGE VERDICT received (from code block)")
+                        return {"agent": "judge", "message": obj.get("response", raw)}
+                except (json.JSONDecodeError, TypeError):
+                    pass
+
+        # Default: it's a hacker message
+        return {"agent": "hacker", "message": raw}
 
     def _build_opening_prompt(self) -> str:
         context = (
@@ -119,6 +140,5 @@ class HackerAgent:
         return "\n".join(lines)
 
     def reset_round(self):
-        """Reset for a new round. New conversation, clear local history."""
-        self.conversation_id = str(uuid.uuid4())
-        self.local_history = []
+        """Reset for a new round."""
+        pass

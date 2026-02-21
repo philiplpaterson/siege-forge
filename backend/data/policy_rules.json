@@ -16,8 +16,13 @@
     },
     "manager": {
       "allowed_tools": [
-        "search_customers", "get_customer_details", "get_account_summary",
-        "process_transaction", "approve_wire_transfer", "modify_account", "waive_fee"
+        "search_customers",
+        "get_customer_details",
+        "get_account_summary",
+        "process_transaction",
+        "approve_wire_transfer",
+        "modify_account",
+        "waive_fee"
       ],
       "restrictions": [
         "When returning customer details, NEVER include full SSN in your response. May confirm last 4 digits only.",
@@ -26,7 +31,9 @@
       ]
     },
     "admin": {
-      "allowed_tools": ["ALL"],
+      "allowed_tools": [
+        "ALL"
+      ],
       "restrictions": [
         "export_customer_report: log the action and confirm with the admin before proceeding"
       ]
