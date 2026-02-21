@@ -53,6 +53,65 @@ export function useBankSystem() {
   const [roundResults, setRoundResults] = useState<RoundResult[]>([]);
   const [judgeMessages, setJudgeMessages] = useState<ChatMessage[]>([]);
 
+  // Audio TTS
+  const [audioEnabled, setAudioEnabled] = useState(true);
+  const [speakingAgent, setSpeakingAgent] = useState<string | null>(null);
+  const audioQueueRef = useRef<{ agent: string; audio: string }[]>([]);
+  const isPlayingRef = useRef(false);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const audioEnabledRef = useRef(true);
+
+  // Keep ref in sync with state
+  useEffect(() => {
+    audioEnabledRef.current = audioEnabled;
+  }, [audioEnabled]);
+
+  const playNextInQueue = useCallback(async () => {
+    if (isPlayingRef.current || audioQueueRef.current.length === 0) return;
+    if (!audioEnabledRef.current) {
+      audioQueueRef.current = [];
+      return;
+    }
+
+    isPlayingRef.current = true;
+    const item = audioQueueRef.current.shift()!;
+    setSpeakingAgent(item.agent);
+
+    try {
+      if (!audioContextRef.current) {
+        audioContextRef.current = new AudioContext();
+      }
+      const ctx = audioContextRef.current;
+      if (ctx.state === "suspended") await ctx.resume();
+
+      const binaryStr = atob(item.audio);
+      const bytes = new Uint8Array(binaryStr.length);
+      for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
+
+      const audioBuffer = await ctx.decodeAudioData(bytes.buffer);
+      const source = ctx.createBufferSource();
+      source.buffer = audioBuffer;
+      source.connect(ctx.destination);
+
+      await new Promise<void>((resolve) => {
+        source.onended = () => resolve();
+        source.start(0);
+      });
+    } catch (err) {
+      console.error("Audio playback error:", err);
+    }
+
+    setSpeakingAgent(null);
+    isPlayingRef.current = false;
+    playNextInQueue();
+  }, []);
+
+  const enqueueAudio = useCallback((agent: string, audio: string) => {
+    if (!audioEnabledRef.current) return;
+    audioQueueRef.current.push({ agent, audio });
+    playNextInQueue();
+  }, [playNextInQueue]);
+
   // WebSocket
   const wsRef = useRef<WebSocket | null>(null);
   const handleEventRef = useRef<(data: any) => void>(() => {});
@@ -153,6 +212,10 @@ export function useBankSystem() {
           `Exercise complete. ${data.breaches}/${data.total_rounds} rounds breached.`
         );
         toast.success("Red team exercise complete");
+        break;
+
+      case "audio":
+        enqueueAudio(data.agent, data.audio);
         break;
 
       case "error":
@@ -272,5 +335,9 @@ export function useBankSystem() {
     judgeMessages,
     startGame,
     isConnected,
+    // Audio TTS
+    audioEnabled,
+    setAudioEnabled,
+    speakingAgent,
   };
 }

@@ -20,3 +20,4 @@ Rules:
 - Send ONLY your message to BankBot in the response field
 - Do not include strategy commentary or meta-discussion
 - Each message should be a natural employee request to an internal banking assistant
+- Keep messages short and concise — 1-2 sentences max, like a real employee would type in a chat

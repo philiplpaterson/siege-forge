@@ -22,6 +22,8 @@ import {
   Radio,
   CheckCircle2,
   XCircle,
+  Volume2,
+  VolumeX,
 } from "lucide-react";
 import { useBankSystem, type ChatMessage, type RoundResult } from "../hooks/useBankSystem";
 import { BankPortal } from "./BankPortal";
@@ -38,6 +40,7 @@ function VideoTile({
   initials,
   isMuted = false,
   isActive = false,
+  isSpeaking = false,
 }: {
   name: string;
   role: string;
@@ -45,10 +48,12 @@ function VideoTile({
   initials: string;
   isMuted?: boolean;
   isActive?: boolean;
+  isSpeaking?: boolean;
 }) {
   return (
     <div className={cn(
       "relative rounded-lg overflow-hidden bg-slate-900 border w-full aspect-video",
+      isSpeaking ? "border-cyan-400/80 ring-1 ring-cyan-400/40" :
       isActive ? "border-green-500/70 ring-1 ring-green-500/30" : "border-slate-700/50"
     )}>
       <div className="absolute inset-0 flex items-center justify-center">
@@ -62,11 +67,15 @@ function VideoTile({
           {initials}
         </div>
       </div>
-      {isActive && (
+      {isSpeaking ? (
+        <div className="absolute top-1 right-1">
+          <Volume2 className="w-3 h-3 text-cyan-400 animate-pulse" />
+        </div>
+      ) : isActive ? (
         <div className="absolute top-1 right-1">
           <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
         </div>
-      )}
+      ) : null}
       <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/80 to-transparent px-2 py-1">
         <div className="flex items-center gap-1.5">
           {isMuted && <MicOff className="w-3 h-3 text-red-400" />}
@@ -224,10 +233,16 @@ export default function MeetUI() {
           ? "John Smith"
           : null;
 
+  // Map speakingAgent (backend agent name) to participant display name
+  const speakingName = bank.speakingAgent === "judge" ? "Judge"
+    : bank.speakingAgent === "hacker" ? "Jamie"
+    : bank.speakingAgent === "bankbot" ? "John Smith"
+    : null;
+
   const participants = [
-    { name: "Judge", role: "Evaluator", color: "#d97706", initials: "JG", isActive: activeSpeaker === "Judge" },
-    { name: "Jamie", role: "Red Team", color: "#059669", initials: "JM", isActive: activeSpeaker === "Jamie" },
-    { name: "John Smith", role: "Teller", color: "#2563eb", initials: "JS", isActive: activeSpeaker === "John Smith" },
+    { name: "Judge", role: "Evaluator", color: "#d97706", initials: "JG", isActive: activeSpeaker === "Judge", isSpeaking: speakingName === "Judge" },
+    { name: "Jamie", role: "Red Team", color: "#059669", initials: "JM", isActive: activeSpeaker === "Jamie", isSpeaking: speakingName === "Jamie" },
+    { name: "John Smith", role: "Teller", color: "#2563eb", initials: "JS", isActive: activeSpeaker === "John Smith", isSpeaking: speakingName === "John Smith" },
   ];
 
   const breachCount = bank.roundResults.filter((r) => r.leaked).length;
@@ -343,6 +358,18 @@ export default function MeetUI() {
             <button className="w-10 h-10 rounded-full bg-slate-700 hover:bg-slate-600 text-white flex items-center justify-center transition-all">
               <MonitorUp className="w-4 h-4" />
             </button>
+            <button
+              onClick={() => bank.setAudioEnabled(!bank.audioEnabled)}
+              className={cn(
+                "w-10 h-10 rounded-full flex items-center justify-center transition-all",
+                bank.audioEnabled
+                  ? "bg-slate-700 hover:bg-slate-600 text-white"
+                  : "bg-orange-500 hover:bg-orange-600 text-white",
+              )}
+              title={bank.audioEnabled ? "Mute TTS" : "Unmute TTS"}
+            >
+              {bank.audioEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
+            </button>
             <div className="w-px h-6 bg-slate-700" />
 
             {/* Start / Stop Game Button */}
@@ -403,6 +430,7 @@ export default function MeetUI() {
                     initials={p.initials}
                     isMuted={p.name !== "John Smith"}
                     isActive={p.isActive}
+                    isSpeaking={p.isSpeaking}
                   />
                 ))}
               </div>

@@ -6,6 +6,7 @@ import os
 from bank_agent import BankAgent
 from hacker_agent import HackerAgent
 from bank_database import BankDatabase
+from tts_service import generate_tts
 
 log = logging.getLogger("game_manager")
 
@@ -81,6 +82,7 @@ class GameManager:
                             "analysis": judge_verdict,
                         },
                     )
+                    asyncio.create_task(self._emit_tts(judge_verdict, "judge"))
                     break
 
                 # 3. It's a hacker message — show it
@@ -89,6 +91,7 @@ class GameManager:
                     "hacker_message",
                     {"round": round_num, "turn": turn, "message": hacker_msg},
                 )
+                asyncio.create_task(self._emit_tts(hacker_msg, "hacker"))
                 await asyncio.sleep(0.5)
 
                 # 4. BankBot responds (local Claude with tool use)
@@ -124,6 +127,7 @@ class GameManager:
                         "tools_used": [t["tool"] for t in tools_used],
                     },
                 )
+                asyncio.create_task(self._emit_tts(bankbot_response, "bankbot"))
                 await asyncio.sleep(0.5)
 
             # Build round result
@@ -177,3 +181,9 @@ class GameManager:
     async def emit(self, event_type: str, data: dict):
         if self.event_callback:
             await self.event_callback({"event": event_type, **data})
+
+    async def _emit_tts(self, text: str, agent: str):
+        """Generate TTS in background and emit audio event when ready."""
+        audio_b64 = await generate_tts(text, agent)
+        if audio_b64:
+            await self.emit("audio", {"agent": agent, "audio": audio_b64})
