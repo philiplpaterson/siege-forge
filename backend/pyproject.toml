@@ -1,7 +1,7 @@
 [project]
-name = "backend"
+name = "redteam-banking-agent"
 version = "0.1.0"
-description = "Add your description here"
+description = "Red team exercise: adversarial agent vs banking AI assistant"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
@@ -9,4 +9,8 @@ dependencies = [
     "anthropic>=0.83.0",
     "fastapi>=0.129.2",
     "uvicorn>=0.41.0",
+    "python-multipart>=0.0.6",
 ]
+
+[project.scripts]
+start = "uvicorn main:app --reload --port 8000"

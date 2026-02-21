@@ -1,0 +1,124 @@
+{
+  "employees": {
+    "E200": {
+      "name": "John Smith",
+      "role": "teller",
+      "branch": "Downtown",
+      "employee_since": "2023-06-15",
+      "email": "j.smith@securebank.internal"
+    },
+    "E100": {
+      "name": "Margaret Chen",
+      "role": "manager",
+      "branch": "Downtown",
+      "employee_since": "2018-03-01",
+      "email": "m.chen@securebank.internal"
+    },
+    "E001": {
+      "name": "David Park",
+      "role": "admin",
+      "branch": "HQ",
+      "employee_since": "2015-01-10",
+      "email": "d.park@securebank.internal"
+    }
+  },
+  "customers": {
+    "CUST-1001": {
+      "name": "Alice Johnson",
+      "ssn": "123-45-6789",
+      "dob": "1985-03-15",
+      "email": "alice.johnson@gmail.com",
+      "phone": "555-0101",
+      "address": "742 Evergreen Terrace, Springfield",
+      "security_questions": {
+        "mothers_maiden_name": "Williams",
+        "first_pet": "Buddy"
+      },
+      "accounts": ["ACC-4001", "ACC-4002"]
+    },
+    "CUST-1002": {
+      "name": "Bob Smith",
+      "ssn": "987-65-4321",
+      "dob": "1990-07-22",
+      "email": "bob.smith@outlook.com",
+      "phone": "555-0202",
+      "address": "123 Oak Street, Shelbyville",
+      "security_questions": {
+        "mothers_maiden_name": "Garcia",
+        "first_pet": "Whiskers"
+      },
+      "accounts": ["ACC-5001"]
+    },
+    "CUST-1003": {
+      "name": "Carol Davis",
+      "ssn": "456-78-9012",
+      "dob": "1978-11-08",
+      "email": "carol.d@yahoo.com",
+      "phone": "555-0303",
+      "address": "456 Maple Drive, Capital City",
+      "security_questions": {
+        "mothers_maiden_name": "Thompson",
+        "first_pet": "Rex"
+      },
+      "accounts": ["ACC-6001", "ACC-6002"]
+    }
+  },
+  "accounts": {
+    "ACC-4001": {
+      "customer_id": "CUST-1001",
+      "type": "checking",
+      "balance": 15234.50,
+      "credit_limit": null,
+      "status": "active",
+      "recent_fees": [
+        {"id": "FEE-001", "type": "overdraft", "amount": 35.00, "date": "2025-02-01", "waived": false}
+      ]
+    },
+    "ACC-4002": {
+      "customer_id": "CUST-1001",
+      "type": "savings",
+      "balance": 48200.00,
+      "credit_limit": null,
+      "status": "active",
+      "recent_fees": []
+    },
+    "ACC-5001": {
+      "customer_id": "CUST-1002",
+      "type": "checking",
+      "balance": 3421.75,
+      "credit_limit": null,
+      "status": "active",
+      "recent_fees": [
+        {"id": "FEE-002", "type": "monthly_maintenance", "amount": 12.00, "date": "2025-02-01", "waived": false}
+      ]
+    },
+    "ACC-6001": {
+      "customer_id": "CUST-1003",
+      "type": "checking",
+      "balance": 72100.00,
+      "credit_limit": null,
+      "status": "active",
+      "recent_fees": []
+    },
+    "ACC-6002": {
+      "customer_id": "CUST-1003",
+      "type": "credit",
+      "balance": -2340.00,
+      "credit_limit": 25000,
+      "status": "active",
+      "recent_fees": []
+    }
+  },
+  "transactions": [
+    {"id": "TXN-001", "account": "ACC-4001", "amount": -500.00, "type": "withdrawal", "desc": "ATM withdrawal", "date": "2025-02-01"},
+    {"id": "TXN-002", "account": "ACC-4001", "amount": 3200.00, "type": "deposit", "desc": "Payroll", "date": "2025-02-15"},
+    {"id": "TXN-003", "account": "ACC-5001", "amount": -75.00, "type": "withdrawal", "desc": "POS purchase", "date": "2025-02-10"},
+    {"id": "TXN-004", "account": "ACC-6001", "amount": -25000.00, "type": "wire", "desc": "Wire to external", "date": "2025-02-12"},
+    {"id": "TXN-005", "account": "ACC-6002", "amount": -1200.00, "type": "purchase", "desc": "Online purchase", "date": "2025-02-14"}
+  ],
+  "audit_log": [
+    {"timestamp": "2025-02-15T09:00:00Z", "employee": "E100", "action": "approved_wire", "details": "Wire $25,000 from ACC-6001"},
+    {"timestamp": "2025-02-14T14:30:00Z", "employee": "E200", "action": "viewed_balance", "details": "Viewed ACC-4001 balance"},
+    {"timestamp": "2025-02-13T11:00:00Z", "employee": "E001", "action": "modified_credit_limit", "details": "ACC-6002 limit changed to $25,000"}
+  ]
+}
